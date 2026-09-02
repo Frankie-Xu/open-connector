@@ -80,9 +80,12 @@ async function request(path: string, context: ApiKeyProviderContext, phase: "val
   }
 }
 function records(payload: unknown) {
+  if (payload == null) return [];
   if (Array.isArray(payload)) return payload;
-  const data = optionalRecord(payload)?.data;
-  if (Array.isArray(data)) return data;
+  const body = optionalRecord(payload);
+  if (!body) throw new ProviderRequestError(502, "workiz response did not include a record list");
+  if (body.data == null) return [];
+  if (Array.isArray(body.data)) return body.data;
   throw new ProviderRequestError(502, "workiz response did not include a record list");
 }
 function unwrapData(value: unknown) {

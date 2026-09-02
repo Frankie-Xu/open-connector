@@ -59,6 +59,74 @@ describe("Confluence OAuth credentials", () => {
     });
   });
 
+  it("accepts a token with no accessible Confluence site and leaves cloudId unset", async () => {
+    const result = await credentialValidators.oauth2!(oauthCredential, {
+      fetcher: async () => Response.json([]),
+    });
+
+    expect(result).toEqual({
+      profile: {
+        accountId: "confluence",
+        displayName: "Confluence",
+        grantedScopes: [],
+      },
+      grantedScopes: [],
+      metadata: {
+        resourceCount: 0,
+        validationEndpoint: "/oauth/token/accessible-resources",
+      },
+    });
+  });
+
+  it("accepts sites that do not include Confluence product scopes and leaves cloudId unset", async () => {
+    const result = await credentialValidators.oauth2!(oauthCredential, {
+      fetcher: async () =>
+        Response.json([
+          {
+            id: "cloud-jira",
+            name: "Engineering",
+            url: "https://eng.atlassian.net",
+            scopes: ["read:jira-work"],
+          },
+        ]),
+    });
+
+    expect(result).toEqual({
+      profile: {
+        accountId: "confluence",
+        displayName: "Confluence",
+        grantedScopes: [],
+      },
+      grantedScopes: [],
+      metadata: {
+        resourceCount: 1,
+        validationEndpoint: "/oauth/token/accessible-resources",
+      },
+    });
+  });
+
+  it("rejects a malformed non-array accessible-resources payload", async () => {
+    await expect(
+      credentialValidators.oauth2!(oauthCredential, {
+        fetcher: async () => Response.json({}),
+      }),
+    ).rejects.toMatchObject({
+      status: 502,
+      message: "Confluence accessible-resources response must be an array",
+    });
+  });
+
+  it("rejects a successful empty body as a malformed accessible-resources payload", async () => {
+    await expect(
+      credentialValidators.oauth2!(oauthCredential, {
+        fetcher: async () => new Response(null, { status: 200 }),
+      }),
+    ).rejects.toMatchObject({
+      status: 502,
+      message: "Confluence accessible-resources response must be an array",
+    });
+  });
+
   it("requires explicit selection when authorization covers multiple Confluence sites", async () => {
     await expect(
       credentialValidators.oauth2!(oauthCredential, {

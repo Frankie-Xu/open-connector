@@ -1,3 +1,4 @@
+import type { CredentialValidationResult } from "../../core/types.ts";
 import type { ProviderActionHandlers } from "../provider-runtime.ts";
 import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
 
@@ -23,14 +24,6 @@ export const eversignApiBaseUrl = "https://api.eversign.com";
 export const eversignValidationPath = "/business";
 
 type EversignPhase = "validate" | "execute";
-
-interface EversignCredentialSummary {
-  primary: {
-    businessId: number;
-    businessName: string;
-  };
-  businessCount: number;
-}
 export const eversignActionHandlers: ProviderActionHandlers<
   "eversign",
   ProviderRuntimeHandler<ApiKeyProviderContext>
@@ -44,7 +37,7 @@ export const eversignActionHandlers: ProviderActionHandlers<
       phase: "execute",
     });
     return {
-      businesses: readResponseArray(payload, "business list").map(normalizeBusiness),
+      businesses: readBusinessList(payload).map(normalizeBusiness),
     };
   },
 
@@ -214,7 +207,7 @@ export async function validateEversignCredential(
   apiKey: string,
   fetcher: typeof fetch,
   signal?: AbortSignal,
-): Promise<EversignCredentialSummary> {
+): Promise<CredentialValidationResult> {
   const payload = await requestEversignJson({
     path: eversignValidationPath,
     apiKey,
@@ -222,15 +215,22 @@ export async function validateEversignCredential(
     signal,
     phase: "validate",
   });
-  const businesses = readResponseArray(payload, "business list").map(normalizeBusiness);
+  const businesses = readBusinessList(payload).map(normalizeBusiness);
   const primary = businesses.find((business) => business.isPrimary) ?? businesses[0];
-  if (!primary) {
-    throw new ProviderRequestError(400, "Xodo Sign returned no businesses for this API key");
-  }
 
   return {
-    primary,
-    businessCount: businesses.length,
+    profile: {
+      accountId: primary ? String(primary.businessId) : "eversign",
+      displayName: primary?.businessName || "Xodo Sign API Key",
+    },
+    grantedScopes: [],
+    metadata: compactObject({
+      apiBaseUrl: eversignApiBaseUrl,
+      validationEndpoint: eversignValidationPath,
+      primaryBusinessId: primary?.businessId,
+      primaryBusinessName: primary?.businessName,
+      businessCount: businesses.length,
+    }),
   };
 }
 
@@ -265,6 +265,9 @@ async function requestEversignJson(input: {
       signal: timeout.signal,
     });
     const payload = await readEversignPayload(response);
+    if (isNoBusinessesFoundForUser(payload) && input.path === eversignValidationPath) {
+      return [];
+    }
     if (!response.ok || isEversignErrorPayload(payload)) {
       throw mapEversignError(response.status, payload, input.phase);
     }
@@ -403,6 +406,12 @@ function isEversignErrorPayload(payload: unknown) {
   return body?.success === false;
 }
 
+function isNoBusinessesFoundForUser(payload: unknown) {
+  const body = optionalRecord(payload);
+  const error = body ? optionalRecord(body.error) : undefined;
+  return optionalString(error?.type) === "no_businesses_found_for_user";
+}
+
 function mapEversignError(status: number, payload: unknown, phase: EversignPhase) {
   const body = optionalRecord(payload);
   const error = body ? optionalRecord(body.error) : undefined;
@@ -507,6 +516,16 @@ function optionalBooleanFlag(value: unknown) {
 
 function readBooleanFlag(value: unknown) {
   return value === true || value === 1 || value === "1";
+}
+
+function readBusinessList(value: unknown) {
+  if (value == null) {
+    return [];
+  }
+  if (!Array.isArray(value)) {
+    throw new ProviderRequestError(502, "Xodo Sign returned an invalid business list payload");
+  }
+  return value;
 }
 
 function readResponseArray(value: unknown, label: string) {

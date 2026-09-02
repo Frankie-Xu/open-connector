@@ -1,12 +1,7 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
 
 import { defineApiKeyProviderExecutors, defineProviderProxy } from "../provider-runtime.ts";
-import {
-  eversignActionHandlers,
-  eversignApiBaseUrl,
-  eversignValidationPath,
-  validateEversignCredential,
-} from "./runtime.ts";
+import { eversignActionHandlers, eversignApiBaseUrl, validateEversignCredential } from "./runtime.ts";
 
 const service = "eversign";
 
@@ -22,21 +17,7 @@ export const proxy: ProviderProxyExecutor = defineProviderProxy({
 });
 
 export const credentialValidators: CredentialValidators = {
-  async apiKey(input, { fetcher, signal }) {
-    const { primary, businessCount } = await validateEversignCredential(input.apiKey, fetcher, signal);
-    return {
-      profile: {
-        accountId: String(primary.businessId),
-        displayName: primary.businessName || "Xodo Sign API Key",
-      },
-      grantedScopes: [],
-      metadata: {
-        apiBaseUrl: eversignApiBaseUrl,
-        validationEndpoint: eversignValidationPath,
-        primaryBusinessId: primary.businessId,
-        primaryBusinessName: primary.businessName,
-        businessCount,
-      },
-    };
+  apiKey(input, { fetcher, signal }) {
+    return validateEversignCredential(input.apiKey, fetcher, signal);
   },
 };
